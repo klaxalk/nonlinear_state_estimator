@@ -1,0 +1,36 @@
+<launch>
+
+  <arg name="debug" default="false" />
+  <arg name="standalone" default="true" />
+
+  <arg name="UAV_NAME" default="$(env UAV_NAME)" />
+
+  <arg     if="$(arg standalone)" name="nodelet" value="standalone"/>
+  <arg unless="$(arg standalone)" name="nodelet" value="load"/>
+  <arg     if="$(arg standalone)" name="nodelet_manager" value=""/>
+  <arg unless="$(arg standalone)" name="nodelet_manager" value="$(arg UAV_NAME)_nodelet_manager"/>
+
+  <arg     if="$(arg debug)" name="launch_prefix" value="debug_roslaunch"/>
+  <arg unless="$(arg debug)" name="launch_prefix" value=""/>
+
+  <group ns="$(arg UAV_NAME)">
+
+    <node pkg="nodelet" type="nodelet" name="heading_estim_test" args="$(arg nodelet) heading_estim_test/HeadingEstimTest $(arg nodelet_manager)" output="screen" launch-prefix="$(arg launch_prefix)">
+
+      <rosparam file="$(find heading_estim_test)/config/default.yaml" />
+
+      <param name="uav_name" value="$(arg UAV_NAME)" />
+
+        <!-- subscribers -->
+      <remap from="~uav_state_in" to="odometry/uav_state" />
+      <remap from="~control_manager_diag_in" to="control_manager/diagnostics" />
+
+        <!-- publishers -->
+      <remap from="~estimate_out" to="~estimate" />
+      <remap from="~measurement_out" to="~measurement" />
+
+    </node>
+
+  </group>
+
+</launch>

@@ -1,0 +1,28 @@
+frame_id: "gps_origin"
+stamp: 0.0 # 0.0 = now, positive value = # of seconds in future
+
+path: [
+  # x, y, z, heading
+  0.0, 0.0, 1.5, 0.0,
+  15.0, 0.0, 1.5, 0.0,
+  15.0, 5.0, 1.5, 0.0,
+  20.0, 5.0, 1.5, 0.0,
+  20.0, 15.0, 1.5, 0.0,
+  0.0, 15.0, 1.5, 0.0,
+  0.0, 0.0, 1.5, 0.0,
+]
+
+use_heading: true
+fly_now: true
+stop_at_waypoints: false
+loop: true
+relax_heading: false
+
+constraints:
+  override: false
+  speed_horizontal: 2.0
+  speed_vertical: 2.0
+  acceleration_horizontal: 2.0
+  acceleration_vertical: 2.0
+  jerk_horizontal: 10.0
+  jerk_vertical: 10.0

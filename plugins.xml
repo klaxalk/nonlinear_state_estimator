@@ -1,0 +1,5 @@
+<library path="lib/libHeadingEstimTest">
+  <class name="heading_estim_test/HeadingEstimTest" type="heading_estim_test::HeadingEstimTest" base_class_type="nodelet::Nodelet">
+    <description>HeadingEstimTest nodelet</description>
+  </class>
+</library>
