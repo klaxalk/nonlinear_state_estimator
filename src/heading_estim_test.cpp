@@ -29,7 +29,7 @@
 
 namespace mrs_lib
 {
-const int n_states       = 7;
+const int n_states       = 8;
 const int n_inputs       = 0;
 const int n_measurements = 4;
 
@@ -51,13 +51,14 @@ using statecov_t  = ukf_t::statecov_t;
 // helper enum to simplify addressing of UKF states
 enum UKF_X
 {
-  X_X                   = 0,
-  X_Y                   = 1,
-  X_SPEED               = 2,
-  X_HEADING             = 3,
-  X_HEADING_RATE_TRUE   = 4,
-  X_HEADING_RATE_BIASED = 5,
-  X_HEADING_RATE_BIAS   = 6,
+  X_X_POS               = 0,  // in world frame
+  X_Y_POS               = 1,  // in world frame
+  X_X_VEL               = 2,  // in body frame
+  X_Y_VEL               = 3,  // in body frame
+  X_HEADING             = 4,
+  X_HEADING_RATE_TRUE   = 5,
+  X_HEADING_RATE_BIASED = 6,
+  X_HEADING_RATE_BIAS   = 7,
 };
 
 // helper enum to simplify addressing of UKF measurements
@@ -98,12 +99,6 @@ private:
   double ukf_kappa_;
   double ukf_beta_;
 
-  double _ukf_bias_covariance_;
-
-  double _ukf_measurement_covariance_position_;
-  double _ukf_measurement_covariance_speed_;
-  double _ukf_measurement_covariance_heading_rate_;
-
   std::shared_ptr<ukf_t> ukf_;
 
   statecov_t statecov_;
@@ -128,10 +123,6 @@ private:
   std::default_random_engine noise_generator_position_;
   std::default_random_engine noise_generator_speed_;
   std::default_random_engine noise_generator_heading_rate_;
-
-  std::normal_distribution<double> normal_distribution_position_;
-  std::normal_distribution<double> normal_distribution_speed_;
-  std::normal_distribution<double> normal_distribution_heading_rate_;
 
   double _measurement_position_sigma_;
   double _measurement_velocity_sigma_;
@@ -182,20 +173,24 @@ void HeadingEstimTest::onInit() {
   mrs_lib::ParamLoader param_loader(nh_, "HeadingEstimTest");
 
   param_loader.loadParam("artificial_gyro_bias", params_.gyro_bias);
+  param_loader.loadParam("gyro_bias_compensation", params_.bias_compensation);
 
-  param_loader.loadParam("measurement/position_sigma", _measurement_position_sigma_);
-  param_loader.loadParam("measurement/velocity_sigma", _measurement_velocity_sigma_);
-  param_loader.loadParam("measurement/heading_rate_sigma", _measurement_heading_rate_sigma_);
+  param_loader.loadParam("measurement/position_sigma", params_.position_measurement_sigma);
+  param_loader.loadParam("measurement/velocity_sigma", params_.speed_measurement_sigma);
+  param_loader.loadParam("measurement/heading_rate_sigma", params_.heading_rate_measurement_sigma);
 
   param_loader.loadParam("ukf/alpha", ukf_alpha_);
   param_loader.loadParam("ukf/kappa", ukf_kappa_);
   param_loader.loadParam("ukf/beta", ukf_beta_);
 
-  param_loader.loadParam("ukf/bias_covariance", _ukf_bias_covariance_);
+  param_loader.loadParam("ukf/model_covariance/diagonal_coef", params_.ukf_model_diagonal_coef);
+  param_loader.loadParam("ukf/model_covariance/bias_covariance", params_.ukf_model_bias_variance);
+  param_loader.loadParam("ukf/model_covariance/heading_covariance", params_.ukf_model_heading_variance);
+  param_loader.loadParam("ukf/model_covariance/heading_rate_covariance", params_.ukf_model_heading_rate_variance);
 
-  param_loader.loadParam("ukf/measurement_covariance/position", _ukf_measurement_covariance_position_);
-  param_loader.loadParam("ukf/measurement_covariance/speed", _ukf_measurement_covariance_speed_);
-  param_loader.loadParam("ukf/measurement_covariance/heading_rate", _ukf_measurement_covariance_heading_rate_);
+  param_loader.loadParam("ukf/measurement_covariance/position", params_.ukf_mes_position_variance);
+  param_loader.loadParam("ukf/measurement_covariance/speed", params_.ukf_mes_speed_variance);
+  param_loader.loadParam("ukf/measurement_covariance/heading_rate", params_.ukf_mes_rate_variance);
 
   param_loader.loadParam("uav_name", _uav_name_);
 
@@ -211,12 +206,6 @@ void HeadingEstimTest::onInit() {
   Drs_t::CallbackType f = boost::bind(&HeadingEstimTest::callbackDrs, this, _1, _2);
   drs_->setCallback(f);
 
-  // | -------------------- measurement noise ------------------- |
-
-  normal_distribution_position_     = std::normal_distribution<double>(0, _measurement_position_sigma_);
-  normal_distribution_speed_        = std::normal_distribution<double>(0, _measurement_velocity_sigma_);
-  normal_distribution_heading_rate_ = std::normal_distribution<double>(0, _measurement_heading_rate_sigma_);
-
   // | --------------------------- ukf -------------------------- |
 
   // bind the transition and observation methods
@@ -226,31 +215,9 @@ void HeadingEstimTest::onInit() {
   // clang-format off
 
   // Initialize the process noise matrix
-  Q_ <<
-    1, 0, 0, 0, 0, 0, 0,
-    0, 1, 0, 0, 0, 0, 0,
-    0, 0, 1, 0, 0, 0, 0,
-    0, 0, 0, 1, 0, 0, 0,
-    0, 0, 0, 0, 1, 0, 0,
-    0, 0, 0, 0, 0, 1, 0,
-    0, 0, 0, 0, 0, 0, _ukf_bias_covariance_;
-
-  // Initialize the measurement noise matrix
-  R_ <<
-    _ukf_measurement_covariance_position_, 0, 0, 0,
-    0, _ukf_measurement_covariance_position_, 0, 0,
-    0, 0, _ukf_measurement_covariance_speed_, 0,
-    0, 0, 0, _ukf_measurement_covariance_heading_rate_;
 
   // Generate initial state and covariance
-  x_t x0; x0 <<
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0;
+  x_t x0 = x_t::Zero();
 
   // clang-format on
 
@@ -370,6 +337,11 @@ void HeadingEstimTest::callbackUavState(mrs_lib::SubscribeHandler<mrs_msgs::UavS
 
   geometry_msgs::PoseStamped measurement_debug;
 
+  // prepare distributions for adding artificial noise
+  std::normal_distribution<double> normal_distribution_position_(0, params.position_measurement_sigma);
+  std::normal_distribution<double> normal_distribution_speed_(0, params.speed_measurement_sigma);
+  std::normal_distribution<double> normal_distribution_heading_rate_(0, params.heading_rate_measurement_sigma);
+
   // create the input vector ... we don't have an input, so it's empty
   u_t u;
 
@@ -411,6 +383,22 @@ void HeadingEstimTest::callbackUavState(mrs_lib::SubscribeHandler<mrs_msgs::UavS
                       mrs_lib::AttitudeConverter(uav_state.pose.orientation).getHeadingRate(uav_state.velocity.angular));
   }
 
+  // update the covariance matrices
+  // clang-format off
+  R_ <<
+    params.ukf_mes_position_variance, 0, 0, 0,
+    0, params.ukf_mes_position_variance, 0, 0,
+    0, 0, params.ukf_mes_speed_variance, 0,
+    0, 0, 0, params.ukf_mes_rate_variance;
+
+  Q_ = Q_t::Identity();
+  Q_ *= params.ukf_model_diagonal_coef;
+  Q_(4, 4) = params.ukf_model_heading_variance;
+  Q_(5, 5) = params.ukf_model_heading_rate_variance;
+  Q_(6, 6) = params.ukf_model_heading_rate_variance;
+  Q_(7, 7) = params.ukf_model_bias_variance;
+  // clang-format on
+
   // There should be a try-catch here to prevent program crashes
   // in case of numerical instabilities (which are possible with UKF)
   try {
@@ -433,11 +421,12 @@ void HeadingEstimTest::callbackUavState(mrs_lib::SubscribeHandler<mrs_msgs::UavS
     odom_out.child_frame_id  = _uav_name_ + "/fcu";
     odom_out.header.stamp    = ros::Time::now();
 
-    odom_out.pose.pose.position.x = statecov_.x(X_X);
-    odom_out.pose.pose.position.y = statecov_.x(X_Y);
+    odom_out.pose.pose.position.x = statecov_.x(X_X_POS);
+    odom_out.pose.pose.position.y = statecov_.x(X_Y_POS);
     odom_out.pose.pose.position.z = uav_state.pose.position.z;
 
-    odom_out.twist.twist.linear.x = statecov_.x(X_SPEED);
+    odom_out.twist.twist.linear.x = statecov_.x(X_X_VEL);
+    odom_out.twist.twist.linear.y = statecov_.x(X_Y_VEL);
 
     odom_out.twist.twist.angular.z = statecov_.x(X_HEADING_RATE_BIASED);
 
@@ -488,12 +477,19 @@ x_t HeadingEstimTest::ufkModelTransition(const x_t& x, const u_t& u, const doubl
   // if we are "moving"
   if (sh_control_manager_diag_.getMsg()->tracker_status.have_goal) {
 
-    // position from speed and heading
-    ret(X_X) = x(X_X) + dt * std::cos(x(X_HEADING)) * X_SPEED;
-    ret(X_Y) = x(X_Y) + dt * std::sin(x(X_HEADING)) * X_SPEED;
+    // rotate velocity from the body frame to the world frame
+    Eigen::Matrix2d rot;
+    rot << std::cos(x(X_HEADING)), -std::sin(x(X_HEADING)), std::sin(x(X_HEADING)), std::cos(x(X_HEADING));
 
-    // speed remains speed
-    ret(X_SPEED) = x(X_SPEED);
+    Eigen::Vector2d vel_world = rot * Eigen::Vector2d(x(X_X_VEL), x(X_Y_VEL));
+
+    // position integrates velocity
+    ret(X_X_POS) = x(X_X_POS) + dt * vel_world(0);
+    ret(X_Y_POS) = x(X_Y_POS) + dt * vel_world(1);
+
+    // velocity stays the same
+    ret(X_X_VEL) = x(X_X_VEL);
+    ret(X_Y_VEL) = x(X_Y_VEL);
 
     // heading is an integration of the heading rate and bias
     ret(X_HEADING) = x(X_HEADING) + dt * (x(X_HEADING_RATE_TRUE));
@@ -502,11 +498,12 @@ x_t HeadingEstimTest::ufkModelTransition(const x_t& x, const u_t& u, const doubl
   } else {
 
     // position remains
-    ret(X_X) = x(X_X);
-    ret(X_Y) = x(X_Y);
+    ret(X_X_POS) = x(X_X_POS);
+    ret(X_Y_POS) = x(X_Y_POS);
 
     // speed should be 0
-    ret(X_SPEED) = 0;
+    ret(X_X_VEL) = 0;
+    ret(X_Y_VEL) = 0;
 
     // true heading reate is 0
     ret(X_HEADING_RATE_TRUE) = 0;
@@ -545,9 +542,9 @@ ukf_t::z_t HeadingEstimTest::ukfModelObservation(const ukf_t::x_t& x) {
 
   z_t ret;
 
-  ret(Z_X)     = x(X_X);
-  ret(Z_Y)     = x(X_Y);
-  ret(Z_SPEED) = x(X_SPEED);
+  ret(Z_X)     = x(X_X_POS);
+  ret(Z_Y)     = x(X_Y_POS);
+  ret(Z_SPEED) = x(X_X_VEL);
 
   if (params.bias_compensation) {
 

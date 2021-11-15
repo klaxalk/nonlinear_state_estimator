@@ -1,18 +1,24 @@
-artificial_gyro_bias: 0.77 # [rad/s]
+artificial_gyro_bias: 0.5 # [rad/s]
+
+gyro_bias_compensation: true
 
 measurement:
-  position_sigma: 0.01 # [m^2]
-  velocity_sigma: 0.001 # [m]
-  heading_rate_sigma: 0.001 # ([rad/s)^2]
+  position_sigma: 0.2 # [m^2]
+  velocity_sigma: 0.01 # [m]
+  heading_rate_sigma: 0.01 # ([rad/s)^2]
 
 ukf:
-  alpha: 0.001
+  alpha: 0.01
   kappa: 1
   beta: 2
 
-  bias_covariance: 0.1
+  model_covariance:
+    diagonal_coef: 0.05
+    bias_covariance: 0.01
+    heading_covariance: 0.001
+    heading_rate_covariance: 0.01
 
   measurement_covariance:
-    position: 100.0
-    speed: 0.1
-    heading_rate: 0.1
+    position: 1000.0
+    speed: 100.0
+    heading_rate: 10.0
