@@ -9,6 +9,7 @@
 #include <mrs_lib/mutex.h>
 #include <mrs_lib/transformer.h>
 #include <mrs_lib/subscribe_handler.h>
+#include <mrs_lib/attitude_converter.h>
 
 #include <mrs_msgs/UavState.h>
 #include <mrs_msgs/ControlManagerDiagnostics.h>
@@ -145,7 +146,7 @@ private:
 
   // | ----------------------- transformer ---------------------- |
 
-  mrs_lib::Transformer transformer_;
+  std::shared_ptr<mrs_lib::Transformer> transformer_;
 
   // | --------------- dynamic reconfigure server --------------- |
 
@@ -251,7 +252,9 @@ void HeadingEstimTest::onInit() {
 
   // | ----------------------- transformer ---------------------- |
 
-  transformer_ = mrs_lib::Transformer("HeadingEstimTest", _uav_name_);
+  transformer_ = std::make_shared<mrs_lib::Transformer>(nh_, "HeadingEstimTest");
+  transformer_->setDefaultPrefix(_uav_name_);
+  transformer_->retryLookupNewest(true);
 
   // | ---------------------- finish innit ---------------------- |
 
@@ -322,7 +325,7 @@ void HeadingEstimTest::callbackUavState(mrs_lib::SubscribeHandler<mrs_msgs::UavS
     velocity_world.vector.y = uav_state.velocity.linear.y;
     velocity_world.vector.z = uav_state.velocity.linear.z;
 
-    auto res = transformer_.transformSingle(_uav_name_ + "/fcu_untilted", velocity_world);
+    auto res = transformer_->transformSingle(velocity_world, _uav_name_ + "/fcu_untilted");
 
     if (!res) {
       ROS_WARN("[HeadingEstimTest]: could not transform velocity to the world frame");
